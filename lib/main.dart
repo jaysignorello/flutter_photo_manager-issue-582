@@ -49,7 +49,15 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  AssetEntity? assetInFocus;
+  late final AssetEntity assetInFocus;
+
+  late final ChewieController _controller;
+
+  /// Whether the controller has initialized.
+  bool hasLoaded = false;
+
+  /// Whether there's any error when initialize the video controller.
+  bool hasErrorWhenInitializing = false;
 
   @override
   void initState() {
@@ -70,9 +78,37 @@ class _MyHomePageState extends State<MyHomePage> {
 
       List<AssetEntity> assets = await recent.getAssetListPaged(0, 100);
 
-      if (assets.isNotEmpty) assetInFocus = assets.first;
+      if (assets.isNotEmpty) {
+        assetInFocus = assets.first;
+        initializeVideoPlayerController();
+      }
 
       setState(() {});
+    }
+  }
+
+  // Get media url from the asset, then initialize the controller.
+  Future<void> initializeVideoPlayerController() async {
+    final String? url = await assetInFocus.getMediaUrl();
+    if (url == null) {
+      hasErrorWhenInitializing = true;
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+    final VideoPlayerController _vc = VideoPlayerController.network(
+      Uri.parse(url).toString(),
+    );
+    _controller = ChewieController(videoPlayerController: _vc);
+    try {
+      hasLoaded = true;
+    } catch (e) {
+      hasErrorWhenInitializing = true;
+    } finally {
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
@@ -83,46 +119,24 @@ class _MyHomePageState extends State<MyHomePage> {
         title: Text(widget.title),
       ),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            assetInFocus == null
-                ? Center(
-                    child: Text('nothing to load...'),
-                  )
-                : FutureBuilder(
-                    future: assetInFocus?.getMediaUrl(),
-                    builder: (BuildContext context, AsyncSnapshot s) {
-                      if (!s.hasData)
-                        return Center(
-                          child: CircularProgressIndicator(),
-                        );
+        child: hasLoaded
+            ? FutureBuilder(
+                future: assetInFocus.getMediaUrl(),
+                builder: (BuildContext context, AsyncSnapshot s) {
+                  if (!s.hasData)
+                    return Center(
+                      child: CircularProgressIndicator(),
+                    );
 
-                      if (s.data == null)
-                        return Center(
-                          child: Text('ooops'),
-                        );
+                  if (s.data == null)
+                    return Center(
+                      child: Text('ooops'),
+                    );
 
-                      VideoPlayerController controller =
-                          VideoPlayerController.network(s.data);
-                      ChewieController chewieController = ChewieController(
-                        videoPlayerController: controller,
-                        autoInitialize: true,
-                      );
-
-                      Size size = MediaQuery.of(context).size;
-                      double ratio = assetInFocus!.size.aspectRatio;
-                      double h = size.height - 100;
-
-                      return SizedBox(
-                        width: h * ratio,
-                        height: h,
-                        child: Chewie(controller: chewieController),
-                      );
-                    },
-                  )
-          ],
-        ),
+                  return Chewie(controller: _controller);
+                },
+              )
+            : Text('Still loading'),
       ),
     );
   }
