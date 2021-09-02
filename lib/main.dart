@@ -1,4 +1,3 @@
-import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
@@ -51,7 +50,7 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   late final AssetEntity assetInFocus;
 
-  late final ChewieController _controller;
+  late final VideoPlayerController _controller;
 
   /// Whether the controller has initialized.
   bool hasLoaded = false;
@@ -82,8 +81,6 @@ class _MyHomePageState extends State<MyHomePage> {
         assetInFocus = assets.first;
         initializeVideoPlayerController();
       }
-
-      setState(() {});
     }
   }
 
@@ -97,46 +94,67 @@ class _MyHomePageState extends State<MyHomePage> {
       }
       return;
     }
-    final VideoPlayerController _vc = VideoPlayerController.network(
+
+    _controller = VideoPlayerController.network(
       Uri.parse(url).toString(),
     );
-    _controller = ChewieController(videoPlayerController: _vc);
-    try {
+
+    await _controller.initialize().then((_) {
+      // Ensure the first frame is shown after the video is initialized, even before the play button has been pressed.
       hasLoaded = true;
-    } catch (e) {
+    }).onError((error, stackTrace) {
       hasErrorWhenInitializing = true;
-    } finally {
+    }).whenComplete(() {
       if (mounted) {
         setState(() {});
       }
-    }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!hasLoaded) return Center(child: CircularProgressIndicator());
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          setState(() {
+            _controller.value.isPlaying
+                ? _controller.pause()
+                : _controller.play();
+          });
+        },
+        child: Icon(
+          _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+        ),
+      ),
       body: Center(
-        child: hasLoaded
-            ? FutureBuilder(
-                future: assetInFocus.getMediaUrl(),
-                builder: (BuildContext context, AsyncSnapshot s) {
-                  if (!s.hasData)
-                    return Center(
-                      child: CircularProgressIndicator(),
-                    );
+        child: FutureBuilder(
+          future: assetInFocus.getMediaUrl(),
+          builder: (BuildContext context, AsyncSnapshot s) {
+            if (!s.hasData)
+              return Center(
+                child: CircularProgressIndicator(),
+              );
 
-                  if (s.data == null)
-                    return Center(
-                      child: Text('ooops'),
-                    );
+            if (s.data == null)
+              return Center(
+                child: Text('ooops'),
+              );
 
-                  return Chewie(controller: _controller);
-                },
-              )
-            : Text('Still loading'),
+            return Center(
+              child: _controller.value.isInitialized
+                  ? AspectRatio(
+                      aspectRatio: _controller.value.aspectRatio,
+                      child: VideoPlayer(_controller),
+                    )
+                  : Container(),
+            );
+          },
+        ),
       ),
     );
   }
